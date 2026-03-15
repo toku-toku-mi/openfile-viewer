@@ -1,18 +1,38 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { readPsd } from 'ag-psd'
 import './App.css'
 
 function App() {
   const [file, setFile] = useState(null)
-  const [imageUrl, setImageUrl] = useState('')
+  const [fileType, setFileType] = useState('')
+  const [previewUrl, setPreviewUrl] = useState('')
+  const [textContent, setTextContent] = useState('')
   const [psdInfo, setPsdInfo] = useState(null)
   const [message, setMessage] = useState('')
+  const [isDragging, setIsDragging] = useState(false)
+
+  useEffect(() => {
+    return () => {
+      if (previewUrl) {
+        URL.revokeObjectURL(previewUrl)
+      }
+    }
+  }, [previewUrl])
+
+  const resetState = () => {
+    if (previewUrl) {
+      URL.revokeObjectURL(previewUrl)
+    }
+    setPreviewUrl('')
+    setTextContent('')
+    setPsdInfo(null)
+    setMessage('')
+    setFileType('')
+  }
 
   const getAllLayerNames = (layers = [], result = []) => {
-    for (let i = 0; i < layers.length; i++) {
-      const layer = layers[i]
-      result.push(layer.name || `レイヤー${result.length + 1}`)
-
+    for (const layer of layers) {
+      result.push(layer.name || `名前なしレイヤー ${result.length + 1}`)
       if (layer.children && layer.children.length > 0) {
         getAllLayerNames(layer.children, result)
       }
@@ -20,14 +40,11 @@ function App() {
     return result
   }
 
-  const handleFile = async (event) => {
-    const selected = event.target.files[0]
+  const processFile = async (selected) => {
     if (!selected) return
 
+    resetState()
     setFile(selected)
-    setImageUrl('')
-    setPsdInfo(null)
-    setMessage('')
 
     const name = selected.name.toLowerCase()
 
@@ -36,11 +53,39 @@ function App() {
       name.endsWith('.jpg') ||
       name.endsWith('.jpeg') ||
       name.endsWith('.gif') ||
-      name.endsWith('.webp')
+      name.endsWith('.webp') ||
+      name.endsWith('.svg')
     ) {
       const url = URL.createObjectURL(selected)
-      setImageUrl(url)
+      setPreviewUrl(url)
+      setFileType('image')
       setMessage('画像ファイルを表示しています')
+      return
+    }
+
+    if (name.endsWith('.pdf')) {
+      const url = URL.createObjectURL(selected)
+      setPreviewUrl(url)
+      setFileType('pdf')
+      setMessage('PDFファイルを表示しています')
+      return
+    }
+
+    if (
+      name.endsWith('.txt') ||
+      name.endsWith('.md') ||
+      name.endsWith('.json') ||
+      name.endsWith('.csv')
+    ) {
+      try {
+        const text = await selected.text()
+        setTextContent(text)
+        setFileType('text')
+        setMessage('テキストファイルを表示しています')
+      } catch (error) {
+        console.error(error)
+        setMessage('テキストの読み込みに失敗しました')
+      }
       return
     }
 
@@ -48,10 +93,9 @@ function App() {
       try {
         const buffer = await selected.arrayBuffer()
         const psd = readPsd(buffer)
-
         const layerNames = getAllLayerNames(psd.children || [])
-        let thumbnail = ''
 
+        let thumbnail = ''
         if (psd.canvas) {
           thumbnail = psd.canvas.toDataURL('image/png')
         }
@@ -64,6 +108,7 @@ function App() {
           thumbnail,
         })
 
+        setFileType('psd')
         setMessage('PSDファイルを読み込みました')
       } catch (error) {
         console.error(error)
@@ -75,88 +120,117 @@ function App() {
     setMessage('このファイル形式はまだ未対応です')
   }
 
+  const handleFileChange = async (event) => {
+    const selected = event.target.files[0]
+    await processFile(selected)
+  }
+
+  const handleDrop = async (event) => {
+    event.preventDefault()
+    setIsDragging(false)
+
+    const droppedFile = event.dataTransfer.files[0]
+    await processFile(droppedFile)
+  }
+
+  const handleDragOver = (event) => {
+    event.preventDefault()
+  }
+
+  const handleDragEnter = (event) => {
+    event.preventDefault()
+    setIsDragging(true)
+  }
+
+  const handleDragLeave = (event) => {
+    event.preventDefault()
+    setIsDragging(false)
+  }
+
   return (
-    <div style={{ textAlign: 'center', marginTop: '60px', padding: '20px' }}>
-      <h1>OpenFile Viewer</h1>
-      <p>PSD, PDF, images, text, and more — all in one viewer.</p>
+    <div className="app">
+      <div className="container">
+        <h1>OpenFile Viewer</h1>
+        <p className="subtitle">
+          PSD, PDF, images, text, and more — all in one viewer.
+        </p>
 
-      <br />
-
-      <input type="file" onChange={handleFile} />
-
-      {file && (
-        <div style={{ marginTop: '24px' }}>
-          <p>ファイル名: {file.name}</p>
+        <div
+          className={`dropzone ${isDragging ? 'dragging' : ''}`}
+          onDrop={handleDrop}
+          onDragOver={handleDragOver}
+          onDragEnter={handleDragEnter}
+          onDragLeave={handleDragLeave}
+        >
+          <input type="file" onChange={handleFileChange} />
+          <p>ファイルを選択、またはここにドラッグ＆ドロップ</p>
         </div>
-      )}
 
-      {message && (
-        <p style={{ marginTop: '16px', fontWeight: 'bold' }}>{message}</p>
-      )}
-
-      {imageUrl && (
-        <div style={{ marginTop: '24px' }}>
-          <img
-            src={imageUrl}
-            alt="preview"
-            style={{
-              maxWidth: '500px',
-              border: '1px solid #ccc',
-              borderRadius: '8px',
-            }}
-          />
-        </div>
-      )}
-
-      {psdInfo && (
-        <div style={{ marginTop: '24px' }}>
-          <p>幅: {psdInfo.width}px</p>
-          <p>高さ: {psdInfo.height}px</p>
-          <p>レイヤー数: {psdInfo.childrenCount}</p>
-
-          {psdInfo.thumbnail && (
-            <div style={{ marginTop: '24px' }}>
-              <h3>サムネイル</h3>
-              <img
-                src={psdInfo.thumbnail}
-                alt="PSD thumbnail"
-                style={{
-                  maxWidth: '320px',
-                  border: '1px solid #ccc',
-                  borderRadius: '8px',
-                }}
-              />
-            </div>
-          )}
-
-          <div style={{ marginTop: '24px' }}>
-            <h3>レイヤー一覧</h3>
-            <ul
-              style={{
-                listStyle: 'none',
-                padding: 0,
-                maxWidth: '420px',
-                margin: '0 auto',
-                textAlign: 'left',
-              }}
-            >
-              {psdInfo.layerNames.map((name, index) => (
-                <li
-                  key={index}
-                  style={{
-                    padding: '8px 12px',
-                    marginBottom: '8px',
-                    border: '1px solid #ddd',
-                    borderRadius: '8px',
-                  }}
-                >
-                  {name}
-                </li>
-              ))}
-            </ul>
+        {file && (
+          <div className="info-card">
+            <p><strong>ファイル名:</strong> {file.name}</p>
+            <p><strong>サイズ:</strong> {(file.size / 1024).toFixed(1)} KB</p>
           </div>
-        </div>
-      )}
+        )}
+
+        {message && <p className="message">{message}</p>}
+
+        {fileType === 'image' && previewUrl && (
+          <div className="viewer-card">
+            <h2>画像プレビュー</h2>
+            <img src={previewUrl} alt="preview" className="preview-image" />
+          </div>
+        )}
+
+        {fileType === 'pdf' && previewUrl && (
+          <div className="viewer-card">
+            <h2>PDFビューア</h2>
+            <iframe
+              src={previewUrl}
+              title="PDF Preview"
+              className="pdf-frame"
+            />
+          </div>
+        )}
+
+        {fileType === 'text' && textContent && (
+          <div className="viewer-card">
+            <h2>テキスト表示</h2>
+            <pre className="text-preview">{textContent}</pre>
+          </div>
+        )}
+
+        {fileType === 'psd' && psdInfo && (
+          <div className="viewer-card">
+            <h2>PSD情報</h2>
+            <p>幅: {psdInfo.width}px</p>
+            <p>高さ: {psdInfo.height}px</p>
+            <p>レイヤー数: {psdInfo.childrenCount}</p>
+
+            {psdInfo.thumbnail ? (
+              <div className="thumbnail-section">
+                <h3>サムネイル</h3>
+                <img
+                  src={psdInfo.thumbnail}
+                  alt="PSD Thumbnail"
+                  className="psd-thumbnail"
+                />
+              </div>
+            ) : (
+              <p>このPSDにはサムネイルを表示できませんでした。</p>
+            )}
+
+            <div className="layers-section">
+              <h3>レイヤー一覧</h3>
+              <ul className="layer-list">
+                {psdInfo.layerNames.map((name, index) => (
+                  <li key={index}>{name}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
