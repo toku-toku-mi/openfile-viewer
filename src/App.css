@@ -153,13 +153,25 @@ h3 {
   display: flex;
   gap: 12px;
   flex-wrap: wrap;
+  align-items: center;
+}
+
+.zoom-label {
+  font-weight: bold;
+  color: #374151;
+}
+
+.zoom-stage {
+  overflow: auto;
+  border: 1px solid #d7dbe2;
+  border-radius: 12px;
+  background: #f9fafb;
+  padding: 12px;
+  max-height: 700px;
 }
 
 .layer-canvas {
-  width: 100%;
-  max-width: 100%;
-  border: 1px solid #d7dbe2;
-  border-radius: 12px;
+  display: block;
   background: white;
 }
 

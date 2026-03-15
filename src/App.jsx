@@ -12,6 +12,8 @@ function App() {
   const [selectedLayerIndex, setSelectedLayerIndex] = useState(null)
   const [visibleLayerIndexes, setVisibleLayerIndexes] = useState([])
   const [layerSearch, setLayerSearch] = useState("")
+  const [singleZoom, setSingleZoom] = useState(1)
+  const [mergedZoom, setMergedZoom] = useState(1)
 
   const layerCanvasRef = useRef(null)
   const mergedCanvasRef = useRef(null)
@@ -90,6 +92,8 @@ function App() {
     setSelectedLayerIndex(null)
     setVisibleLayerIndexes([])
     setLayerSearch("")
+    setSingleZoom(1)
+    setMergedZoom(1)
   }
 
   const processFile = async (selectedFile) => {
@@ -186,10 +190,12 @@ function App() {
 
   const showOnlyThisLayer = (index) => {
     setSelectedLayerIndex(index)
+    setSingleZoom(1)
   }
 
   const clearLayerSelection = () => {
     setSelectedLayerIndex(null)
+    setSingleZoom(1)
   }
 
   const showAllLayers = () => {
@@ -246,6 +252,14 @@ function App() {
         layer.name.toLowerCase().includes(layerSearch.toLowerCase())
       )
   }, [psdInfo, layerSearch])
+
+  const zoomInSingle = () => setSingleZoom((prev) => Math.min(prev + 0.25, 5))
+  const zoomOutSingle = () => setSingleZoom((prev) => Math.max(prev - 0.25, 0.25))
+  const resetSingleZoom = () => setSingleZoom(1)
+
+  const zoomInMerged = () => setMergedZoom((prev) => Math.min(prev + 0.25, 5))
+  const zoomOutMerged = () => setMergedZoom((prev) => Math.max(prev - 0.25, 0.25))
+  const resetMergedZoom = () => setMergedZoom(1)
 
   return (
     <div className="app">
@@ -329,8 +343,26 @@ function App() {
                   </button>
                 </div>
 
+                <div className="button-row">
+                  <button onClick={zoomOutSingle}>−</button>
+                  <button onClick={resetSingleZoom}>100%</button>
+                  <button onClick={zoomInSingle}>＋</button>
+                  <span className="zoom-label">
+                    {Math.round(singleZoom * 100)}%
+                  </span>
+                </div>
+
                 {selectedLayerIndex !== null ? (
-                  <canvas ref={layerCanvasRef} className="layer-canvas" />
+                  <div className="zoom-stage">
+                    <canvas
+                      ref={layerCanvasRef}
+                      className="layer-canvas"
+                      style={{
+                        transform: `scale(${singleZoom})`,
+                        transformOrigin: "top left",
+                      }}
+                    />
+                  </div>
                 ) : (
                   <p className="helper-text">
                     レイヤー一覧から「このレイヤーだけ表示」を押してください。
@@ -346,7 +378,25 @@ function App() {
                   <button onClick={downloadMergedLayers}>PNG保存</button>
                 </div>
 
-                <canvas ref={mergedCanvasRef} className="layer-canvas" />
+                <div className="button-row">
+                  <button onClick={zoomOutMerged}>−</button>
+                  <button onClick={resetMergedZoom}>100%</button>
+                  <button onClick={zoomInMerged}>＋</button>
+                  <span className="zoom-label">
+                    {Math.round(mergedZoom * 100)}%
+                  </span>
+                </div>
+
+                <div className="zoom-stage">
+                  <canvas
+                    ref={mergedCanvasRef}
+                    className="layer-canvas"
+                    style={{
+                      transform: `scale(${mergedZoom})`,
+                      transformOrigin: "top left",
+                    }}
+                  />
+                </div>
               </div>
             </div>
 
