@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://toku-toku-mi.github.io/openfile-viewer/sitemap.xml
