@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { readPsd } from 'ag-psd'
 import './App.css'
 
@@ -11,6 +11,12 @@ function App() {
   const [message, setMessage] = useState('')
   const [isDragging, setIsDragging] = useState(false)
 
+  const [selectedLayerIndex, setSelectedLayerIndex] = useState(null)
+  const [visibleLayerIndexes, setVisibleLayerIndexes] = useState([])
+
+  const layerCanvasRef = useRef(null)
+  const mergedCanvasRef = useRef(null)
+
   useEffect(() => {
     return () => {
       if (previewUrl) {
@@ -18,6 +24,48 @@ function App() {
       }
     }
   }, [previewUrl])
+
+  useEffect(() => {
+    if (!psdInfo || selectedLayerIndex === null) return
+    const canvas = layerCanvasRef.current
+    if (!canvas) return
+
+    const ctx = canvas.getContext('2d')
+    const selectedLayer = psdInfo.layers[selectedLayerIndex]
+    if (!selectedLayer || !selectedLayer.canvas) return
+
+    canvas.width = psdInfo.width
+    canvas.height = psdInfo.height
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+    if (selectedLayer.left !== undefined && selectedLayer.top !== undefined) {
+      ctx.drawImage(selectedLayer.canvas, selectedLayer.left, selectedLayer.top)
+    } else {
+      ctx.drawImage(selectedLayer.canvas, 0, 0)
+    }
+  }, [psdInfo, selectedLayerIndex])
+
+  useEffect(() => {
+    if (!psdInfo) return
+    const canvas = mergedCanvasRef.current
+    if (!canvas) return
+
+    const ctx = canvas.getContext('2d')
+    canvas.width = psdInfo.width
+    canvas.height = psdInfo.height
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+    visibleLayerIndexes.forEach((index) => {
+      const layer = psdInfo.layers[index]
+      if (!layer || !layer.canvas) return
+
+      if (layer.left !== undefined && layer.top !== undefined) {
+        ctx.drawImage(layer.canvas, layer.left, layer.top)
+      } else {
+        ctx.drawImage(layer.canvas, 0, 0)
+      }
+    })
+  }, [psdInfo, visibleLayerIndexes])
 
   const resetState = () => {
     if (previewUrl) {
@@ -28,13 +76,22 @@ function App() {
     setPsdInfo(null)
     setMessage('')
     setFileType('')
+    setSelectedLayerIndex(null)
+    setVisibleLayerIndexes([])
   }
 
-  const getAllLayerNames = (layers = [], result = []) => {
+  const flattenLayers = (layers = [], result = []) => {
     for (const layer of layers) {
-      result.push(layer.name || `名前なしレイヤー ${result.length + 1}`)
+      result.push({
+        name: layer.name || `名前なしレイヤー ${result.length + 1}`,
+        canvas: layer.canvas || null,
+        hidden: !!layer.hidden,
+        left: layer.left ?? 0,
+        top: layer.top ?? 0,
+      })
+
       if (layer.children && layer.children.length > 0) {
-        getAllLayerNames(layer.children, result)
+        flattenLayers(layer.children, result)
       }
     }
     return result
@@ -93,21 +150,26 @@ function App() {
       try {
         const buffer = await selected.arrayBuffer()
         const psd = readPsd(buffer)
-        const layerNames = getAllLayerNames(psd.children || [])
 
+        const layers = flattenLayers(psd.children || [])
         let thumbnail = ''
+
         if (psd.canvas) {
           thumbnail = psd.canvas.toDataURL('image/png')
         }
 
+        const initialVisible = layers
+          .map((layer, index) => (!layer.hidden && layer.canvas ? index : null))
+          .filter((index) => index !== null)
+
         setPsdInfo({
           width: psd.width,
           height: psd.height,
-          childrenCount: layerNames.length,
-          layerNames,
+          layers,
           thumbnail,
         })
 
+        setVisibleLayerIndexes(initialVisible)
         setFileType('psd')
         setMessage('PSDファイルを読み込みました')
       } catch (error) {
@@ -145,6 +207,33 @@ function App() {
   const handleDragLeave = (event) => {
     event.preventDefault()
     setIsDragging(false)
+  }
+
+  const toggleLayerVisibility = (index) => {
+    setVisibleLayerIndexes((prev) => {
+      if (prev.includes(index)) {
+        return prev.filter((item) => item !== index)
+      }
+      return [...prev, index]
+    })
+  }
+
+  const showOnlyThisLayer = (index) => {
+    setSelectedLayerIndex(index)
+  }
+
+  const showAllLayers = () => {
+    if (!psdInfo) return
+    const allVisible = psdInfo.layers
+      .map((layer, index) => (layer.canvas ? index : null))
+      .filter((index) => index !== null)
+
+    setVisibleLayerIndexes(allVisible)
+    setSelectedLayerIndex(null)
+  }
+
+  const clearLayerSelection = () => {
+    setSelectedLayerIndex(null)
   }
 
   return (
@@ -205,11 +294,11 @@ function App() {
             <h2>PSD情報</h2>
             <p>幅: {psdInfo.width}px</p>
             <p>高さ: {psdInfo.height}px</p>
-            <p>レイヤー数: {psdInfo.childrenCount}</p>
+            <p>レイヤー数: {psdInfo.layers.length}</p>
 
             {psdInfo.thumbnail ? (
               <div className="thumbnail-section">
-                <h3>サムネイル</h3>
+                <h3>PSD全体サムネイル</h3>
                 <img
                   src={psdInfo.thumbnail}
                   alt="PSD Thumbnail"
@@ -221,10 +310,58 @@ function App() {
             )}
 
             <div className="layers-section">
+              <h3>レイヤー単体表示</h3>
+              <div className="button-row">
+                <button onClick={clearLayerSelection}>単体表示を解除</button>
+              </div>
+
+              {selectedLayerIndex !== null && (
+                <div className="canvas-section">
+                  <canvas ref={layerCanvasRef} className="layer-canvas" />
+                </div>
+              )}
+            </div>
+
+            <div className="layers-section">
+              <h3>チェックしたレイヤーだけ合成表示</h3>
+              <div className="button-row">
+                <button onClick={showAllLayers}>全部チェックする</button>
+              </div>
+
+              <div className="canvas-section">
+                <canvas ref={mergedCanvasRef} className="layer-canvas" />
+              </div>
+            </div>
+
+            <div className="layers-section">
               <h3>レイヤー一覧</h3>
               <ul className="layer-list">
-                {psdInfo.layerNames.map((name, index) => (
-                  <li key={index}>{name}</li>
+                {psdInfo.layers.map((layer, index) => (
+                  <li key={index} className="layer-item">
+                    <div className="layer-main">
+                      <label className="layer-checkbox">
+                        <input
+                          type="checkbox"
+                          checked={visibleLayerIndexes.includes(index)}
+                          onChange={() => toggleLayerVisibility(index)}
+                          disabled={!layer.canvas}
+                        />
+                        <span>{layer.name}</span>
+                      </label>
+
+                      <button
+                        onClick={() => showOnlyThisLayer(index)}
+                        disabled={!layer.canvas}
+                      >
+                        このレイヤーだけ見る
+                      </button>
+                    </div>
+
+                    <div className="layer-sub">
+                      {layer.hidden ? '初期状態: 非表示' : '初期状態: 表示'}
+                      {!layer.canvas && ' / 画像を持たないレイヤー'}
+                    </div>
+                  </li>
                 ))}
               </ul>
             </div>
