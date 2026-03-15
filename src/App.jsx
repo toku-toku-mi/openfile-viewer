@@ -1,6 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { readPsd } from "ag-psd"
+import { Document, Page, pdfjs } from "react-pdf"
+import "react-pdf/dist/Page/AnnotationLayer.css"
+import "react-pdf/dist/Page/TextLayer.css"
 import "./App.css"
+
+pdfjs.GlobalWorkerOptions.workerSrc = new URL(
+  "pdfjs-dist/build/pdf.worker.min.mjs",
+  import.meta.url
+).toString()
 
 function App() {
   const [file, setFile] = useState(null)
@@ -14,6 +22,10 @@ function App() {
   const [layerSearch, setLayerSearch] = useState("")
   const [singleZoom, setSingleZoom] = useState(1)
   const [mergedZoom, setMergedZoom] = useState(1)
+
+  const [pdfNumPages, setPdfNumPages] = useState(null)
+  const [pdfPageNumber, setPdfPageNumber] = useState(1)
+  const [pdfZoom, setPdfZoom] = useState(1)
 
   const layerCanvasRef = useRef(null)
   const mergedCanvasRef = useRef(null)
@@ -94,6 +106,9 @@ function App() {
     setLayerSearch("")
     setSingleZoom(1)
     setMergedZoom(1)
+    setPdfNumPages(null)
+    setPdfPageNumber(1)
+    setPdfZoom(1)
   }
 
   const processFile = async (selectedFile) => {
@@ -261,6 +276,23 @@ function App() {
   const zoomOutMerged = () => setMergedZoom((prev) => Math.max(prev - 0.25, 0.25))
   const resetMergedZoom = () => setMergedZoom(1)
 
+  const onPdfLoadSuccess = ({ numPages }) => {
+    setPdfNumPages(numPages)
+    setPdfPageNumber(1)
+  }
+
+  const goToPrevPdfPage = () => {
+    setPdfPageNumber((prev) => Math.max(prev - 1, 1))
+  }
+
+  const goToNextPdfPage = () => {
+    setPdfPageNumber((prev) => Math.min(prev + 1, pdfNumPages || 1))
+  }
+
+  const zoomInPdf = () => setPdfZoom((prev) => Math.min(prev + 0.2, 3))
+  const zoomOutPdf = () => setPdfZoom((prev) => Math.max(prev - 0.2, 0.6))
+  const resetPdfZoom = () => setPdfZoom(1)
+
   return (
     <div className="app">
       <div className="container">
@@ -299,7 +331,37 @@ function App() {
         {fileType === "pdf" && previewUrl && (
           <div className="viewer-card">
             <h2>PDFビューア</h2>
-            <iframe src={previewUrl} title="pdf-preview" className="pdf-frame" />
+
+            <div className="button-row">
+              <button onClick={goToPrevPdfPage} disabled={pdfPageNumber <= 1}>
+                前のページ
+              </button>
+              <button onClick={goToNextPdfPage} disabled={pdfPageNumber >= (pdfNumPages || 1)}>
+                次のページ
+              </button>
+              <button onClick={zoomOutPdf}>−</button>
+              <button onClick={resetPdfZoom}>100%</button>
+              <button onClick={zoomInPdf}>＋</button>
+              <span className="zoom-label">
+                {pdfNumPages ? `${pdfPageNumber} / ${pdfNumPages} ページ` : "読み込み中"}
+              </span>
+            </div>
+
+            <div className="pdf-stage">
+              <Document
+                file={previewUrl}
+                onLoadSuccess={onPdfLoadSuccess}
+                loading="PDFを読み込み中..."
+                error="PDFの読み込みに失敗しました"
+              >
+                <Page
+                  pageNumber={pdfPageNumber}
+                  scale={pdfZoom}
+                  renderTextLayer
+                  renderAnnotationLayer
+                />
+              </Document>
+            </div>
           </div>
         )}
 
